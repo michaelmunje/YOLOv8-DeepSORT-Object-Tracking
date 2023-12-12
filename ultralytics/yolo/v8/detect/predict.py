@@ -122,7 +122,7 @@ def UI_box(x, img, color=None, label=None, line_thickness=None):
 
 
 
-def draw_boxes(img, bbox, names,object_id, identities=None, offset=(0, 0)):
+def draw_boxes(img, bbox, names, object_id, identities=None, offset=(0, 0)):
     #cv2.line(img, line[0], line[1], (46,162,112), 3)
 
     height, width, _ = img.shape
@@ -175,11 +175,12 @@ class DetectionPredictor(BasePredictor):
         self.n_frames = 0
         
     def write_tracking_data(self):
-        output_filename = f"tracking_output_{self.n_frames}_frames.txt"
+        output_filename = f"tracking_output_{self.n_frames}_frames.csv"
         output_filepath = os.path.join(self.save_dir, output_filename)
         with open(output_filepath, 'w') as f:
+            f.write("frame,tracking_id,class_id,class_name,x_min,y_min,x_max,y_max\n")
             for data in self.tracking_data:
-                f.write(f"{data[0]} {data[1]} {data[2]} {data[3][0]} {data[3][1]} {data[3][2]} {data[3][3]}\n")
+                f.write(f"{data[0]},{data[1]},{data[2]},{data[3]},{data[4][0]},{data[4][1]},{data[4][2]},{data[4][3]}\n")
 
     def get_annotator(self, img):
         return Annotator(img, line_width=self.args.line_thickness, example=str(self.model.names))
@@ -252,7 +253,10 @@ class DetectionPredictor(BasePredictor):
             for i in range(len(identities)):
                 # normalize bb w.r.t. image size
                 bbox = bbox_xyxy[i] / torch.Tensor([width, height, width, height])
-                self.tracking_data.append([frame, identities[i], object_id[i], bbox])
+                id = int(identities[i]) if identities is not None else 0
+                object_class = int(object_id[i])
+                object_class_name = self.model.names[object_class]
+                self.tracking_data.append([frame, id, object_class, object_class_name, bbox])
             draw_boxes(im0, bbox_xyxy, self.model.names, object_id,identities)
 
         self.n_frames = max(self.n_frames, frame)
