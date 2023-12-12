@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 import cv2
+import os
 import torch
 import torch.backends.cudnn as cudnn
 from numpy import random
@@ -15,7 +16,6 @@ from ultralytics.yolo.utils import DEFAULT_CONFIG, ROOT, ops
 from ultralytics.yolo.utils.checks import check_imgsz
 from ultralytics.yolo.utils.plotting import Annotator, colors, save_one_box
 
-import cv2
 from deep_sort_pytorch.utils.parser import get_config
 from deep_sort_pytorch.deep_sort import DeepSort
 from collections import deque
@@ -167,6 +167,19 @@ def draw_boxes(img, bbox, names,object_id, identities=None, offset=(0, 0)):
 
 
 class DetectionPredictor(BasePredictor):
+    # write constructor that calls base constructor and also instantiates the following object
+    # self.tracking_data = [] # frame, tracking id, class, bbox (relative), confidence 
+    def __init__(self, args):
+        super().__init__(args)
+        self.tracking_data = [] # frame, tracking id, class, bbox
+        self.n_frames = 0
+        
+    def write_tracking_data(self):
+        output_filename = f"tracking_output_{self.n_frames}_frames.txt"
+        output_filepath = os.path.join(self.save_dir, output_filename)
+        with open(output_filepath, 'w') as f:
+            for data in self.tracking_data:
+                f.write(f"{data[0]} {data[1]} {data[2]} {data[3][0]} {data[3][1]} {data[3][2]} {data[3][3]}\n")
 
     def get_annotator(self, img):
         return Annotator(img, line_width=self.args.line_thickness, example=str(self.model.names))
@@ -175,7 +188,7 @@ class DetectionPredictor(BasePredictor):
         img = torch.from_numpy(img).to(self.model.device)
         img = img.half() if self.model.fp16 else img.float()  # uint8 to fp16/32
         img /= 255  # 0 - 255 to 0.0 - 1.0
-        return img
+        return img 
 
     def postprocess(self, preds, img, orig_img):
         preds = ops.non_max_suppression(preds,
@@ -205,7 +218,7 @@ class DetectionPredictor(BasePredictor):
             frame = getattr(self.dataset, 'frame', 0)
 
         self.data_path = p
-        save_path = str(self.save_dir / p.name)  # im.jpg
+        save_path = str(self.save_dir / p.name)  # im.jpg, confidence 
         self.txt_path = str(self.save_dir / 'labels' / p.stem) + ('' if self.dataset.mode == 'image' else f'_{frame}')
         log_string += '%gx%g ' % im.shape[2:]  # print string
         self.annotator = self.get_annotator(im0)
@@ -215,10 +228,7 @@ class DetectionPredictor(BasePredictor):
         if len(det) == 0:
             return log_string
         for c in det[:, 5].unique():
-            n = (det[:, 5] == c).sum()  # detections per class
-            log_string += f"{n} {self.model.names[int(c)]}{'s' * (n > 1)}, "
-        # write
-        gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
+            n = (det[:, 5] == c).sum()  # detections per class, confidence ain whwh
         xywh_bboxs = []
         confs = []
         oids = []
@@ -237,9 +247,16 @@ class DetectionPredictor(BasePredictor):
             bbox_xyxy = outputs[:, :4]
             identities = outputs[:, -2]
             object_id = outputs[:, -1]
+            height, width, _ = im0.shape
             
+            for i in range(len(identities)):
+                # normalize bb w.r.t. image size
+                bbox = bbox_xyxy[i] / torch.Tensor([width, height, width, height])
+                self.tracking_data.append([frame, identities[i], object_id[i], bbox])
             draw_boxes(im0, bbox_xyxy, self.model.names, object_id,identities)
 
+        self.n_frames = max(self.n_frames, frame)
+            
         return log_string
 
 
@@ -251,6 +268,7 @@ def predict(cfg):
     cfg.source = cfg.source if cfg.source is not None else ROOT / "assets"
     predictor = DetectionPredictor(cfg)
     predictor()
+    predictor.write_tracking_data()
 
 
 if __name__ == "__main__":

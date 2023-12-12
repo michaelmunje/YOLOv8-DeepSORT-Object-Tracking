@@ -6,6 +6,7 @@ mode: "train" # choices=['train', 'val', 'predict'] # mode to run task in.
 
 # Train settings -------------------------------------------------------------------------------------------------------
 model: null # i.e. yolov8n.pt, yolov8n.yaml. Path to model file
+tracking_output_folder: null
 data: null # i.e. coco128.yaml. Path to data file
 epochs: 100 # number of epochs to train for
 patience: 50  # TODO: epochs to wait for no observable improvement for early stopping of training
